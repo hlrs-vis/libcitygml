@@ -1,0 +1,4 @@
+PROJECT_NAME=libcitygml
+INPUT = sources
+RECURSIVE = YES
+GENERATE_UML = YES

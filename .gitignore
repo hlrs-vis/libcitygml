@@ -19,3 +19,6 @@ install
 build/
 buildRelease/
 *.autosave
+compile_commands.json
+html
+latex
