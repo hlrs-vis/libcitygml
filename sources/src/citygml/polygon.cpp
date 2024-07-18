@@ -180,6 +180,7 @@ namespace citygml {
 
         tesselator->init(normal);
 
+        // add contours
         if (m_exteriorRing != nullptr) {
 
             tesselator->addContour( m_exteriorRing->getVertices(), getTexCoordListsForRing(*m_exteriorRing, themesFront, themesBack));
@@ -198,6 +199,7 @@ namespace citygml {
             }
         }
 
+        // compute new geometry
         tesselator->compute();
         m_vertices = tesselator->getVertices();
         m_indices = tesselator->getIndices();
