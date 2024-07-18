@@ -50,6 +50,8 @@ void Tesselator::init( const TVec3d& normal)
     TesselatorBase::init(normal);
     gluTessBeginPolygon( _tobj, this );
 
+    // define which part of polygon is inside/outside
+    // possible Values: GLU_TESS_WINDING_ODD, GLU_TESS_WINDING_NONZERO, GLU_TESS_WINDING_POSITIVE, GLU_TESS_WINDING_NEGATIVE, GLU_TESS_WINDING_ABS_GEQ_TWO
     gluTessProperty( _tobj, GLU_TESS_WINDING_RULE, _windingRule);
     gluTessNormal( _tobj, normal.x, normal.y, normal.z );
 }
