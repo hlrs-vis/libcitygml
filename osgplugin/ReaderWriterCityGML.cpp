@@ -92,6 +92,7 @@ public:
         : _printNames(false)
         , _useMaxLODOnly(false)
         , _singleObject(false)
+        , _addTransform(false)
         , _storeGeomIDs(false)
         , _theme("")
     {}
@@ -112,6 +113,7 @@ public:
             else if ( currentOption == "pruneemptyobjects" ) _params.pruneEmptyObjects = true;
             else if (currentOption == "usemaxlodonly") _useMaxLODOnly = true;
             else if (currentOption == "singleobject") _singleObject = true;
+            else if (currentOption == "addtransform") _addTransform = true;
             else if ( currentOption == "usetheme" ) iss >> _theme;
             else if ( currentOption == "storegeomids" ) _storeGeomIDs = true;
         }
@@ -122,6 +124,7 @@ public:
     bool _printNames;
     bool _useMaxLODOnly;
     bool _singleObject;
+    bool _addTransform;
     bool _storeGeomIDs;
     std::map< std::string, osg::Texture2D* > _textureMap;
     std::string _theme;
@@ -322,6 +325,8 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
     }
     if(settings._singleObject)
     {
+        osg::Vec3 offset;
+        osg::MatrixTransform *offsetMat = new osg::MatrixTransform;
         osg::Geode* geode = new osg::Geode();
 
         // Vertices
@@ -334,9 +339,26 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         for (const auto& it : ma)
         {
             materialArrays* arrays = it.second;
+            if (arrays->vertices->size() > 0)
+            {
+                offset = arrays->vertices.get()->at(0); // transform everything relative to the first vertex
+                offsetMat->setMatrix(osg::Matrix::translate(offset));
+                break;
+            }
+        }
+        for (const auto& it : ma)
+        {
+            materialArrays* arrays = it.second;
             if(arrays->vertices->size()>0)
             {
 				osg::Geometry* geom = new osg::Geometry;
+                if (settings._addTransform)
+                {
+                    for (size_t i = 0; i < arrays->vertices->size(); i++)
+                    {
+                        arrays->vertices->at(i) -= offset;
+                    }
+                }
 				geom->setVertexArray(arrays->vertices);
 				osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, arrays->indices.begin(), arrays->indices.end());
 				geom->addPrimitiveSet(indices);
@@ -385,8 +407,15 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         ma.clear();
 
 
-
-        root->addChild(geode);
+        if (settings._addTransform)
+        {
+            root->addChild(offsetMat);
+            offsetMat->addChild(geode);
+        }
+        else
+        {
+            root->addChild(geode);
+        }
     }
     else
     {
@@ -748,6 +777,18 @@ void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const cityg
                         arrays = it->second;
                 }
                 else if (object.getType() == citygml::CityObject::CityObjectsType::COT_WallSurface)
+                {
+                    auto it = ma.find("wall");
+                    if (it != ma.end())
+                        arrays = it->second;
+                }
+                else if (object.getType() == citygml::CityObject::CityObjectsType::COT_BuildingPart)
+                {
+                    auto it = ma.find("wall");
+                    if (it != ma.end())
+                        arrays = it->second;
+                }
+                else if (object.getType() == citygml::CityObject::CityObjectsType::COT_Building)
                 {
                     auto it = ma.find("wall");
                     if (it != ma.end())
