@@ -20,6 +20,7 @@
 #include <osg/Depth>
 #include <osg/LightModel>
 #include <osg/ValueObject>
+#include <osg/ProxyNode>
 
 #include <osgText/Font>
 #include <osgText/Text>
@@ -92,7 +93,6 @@ public:
         : _printNames(false)
         , _useMaxLODOnly(false)
         , _singleObject(false)
-        , _addTransform(false)
         , _storeGeomIDs(false)
         , _theme("")
     {}
@@ -113,7 +113,6 @@ public:
             else if ( currentOption == "pruneemptyobjects" ) _params.pruneEmptyObjects = true;
             else if (currentOption == "usemaxlodonly") _useMaxLODOnly = true;
             else if (currentOption == "singleobject") _singleObject = true;
-            else if (currentOption == "addtransform") _addTransform = true;
             else if ( currentOption == "usetheme" ) iss >> _theme;
             else if ( currentOption == "storegeomids" ) _storeGeomIDs = true;
         }
@@ -124,7 +123,6 @@ public:
     bool _printNames;
     bool _useMaxLODOnly;
     bool _singleObject;
-    bool _addTransform;
     bool _storeGeomIDs;
     std::map< std::string, osg::Texture2D* > _textureMap;
     std::string _theme;
@@ -202,9 +200,9 @@ private:
 
     ReadResult readCity(std::shared_ptr<const citygml::CityModel>, CityGMLSettings& ) const;
     bool createCityObject(const citygml::CityObject&, CityGMLSettings&, osg::Group*, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), unsigned int minimumLODToConsider = 0) const;
-    bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), unsigned int minimumLODToConsider = 0) const;
+    bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), osg::MatrixTransform* root=nullptr, unsigned int minimumLODToConsider = 0) const;
 
-    void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object,const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const;
+    void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object,const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root = nullptr) const;
 
 };
 
@@ -323,10 +321,30 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         TVec3d lb = city->getEnvelope().getLowerBound();
         offset = osg::Vec3d(lb.x, lb.y, lb.z);
     }
+    else
+    {
+        for (unsigned int i = 0; i < roots.size(); ++i)
+        {
+            const citygml::CityObject& object = *roots[i];
+
+            if (object.getGeometriesCount()>0)
+            {
+                const citygml::Geometry& geometry = object.getGeometry(0);
+
+                if (geometry.getPolygonsCount() > 0)
+                {
+                    const citygml::Polygon& p = *geometry.getPolygon(0);
+                    const std::vector<TVec3d>& vert = p.getVertices();
+
+                    TVec3d v = vert[0];
+                    offset = osg::Vec3d(v.x, v.y, v.z);
+                    break;
+                }
+            }
+        }
+    }
     if(settings._singleObject)
     {
-        osg::Vec3 offset;
-        osg::MatrixTransform *offsetMat = new osg::MatrixTransform;
         osg::Geode* geode = new osg::Geode();
 
         // Vertices
@@ -335,16 +353,9 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         materialArrays* arrR = new materialArrays();
         ma["roof"] = arrR;
 
-        for (unsigned int i = 0; i < roots.size(); ++i) createSingleCityObject(*roots[i], settings, offset);
-        for (const auto& it : ma)
+        for (unsigned int i = 0; i < roots.size(); ++i)
         {
-            materialArrays* arrays = it.second;
-            if (arrays->vertices->size() > 0)
-            {
-                offset = arrays->vertices.get()->at(0); // transform everything relative to the first vertex
-                offsetMat->setMatrix(osg::Matrix::translate(offset));
-                break;
-            }
+            createSingleCityObject(*roots[i], settings, offset, root);
         }
         for (const auto& it : ma)
         {
@@ -352,13 +363,6 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
             if(arrays->vertices->size()>0)
             {
 				osg::Geometry* geom = new osg::Geometry;
-                if (settings._addTransform)
-                {
-                    for (size_t i = 0; i < arrays->vertices->size(); i++)
-                    {
-                        arrays->vertices->at(i) -= offset;
-                    }
-                }
 				geom->setVertexArray(arrays->vertices);
 				osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, arrays->indices.begin(), arrays->indices.end());
 				geom->addPrimitiveSet(indices);
@@ -407,15 +411,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         ma.clear();
 
 
-        if (settings._addTransform)
-        {
-            root->addChild(offsetMat);
-            offsetMat->addChild(geode);
-        }
-        else
-        {
-            root->addChild(geode);
-        }
+        root->addChild(geode);
     }
     else
     {
@@ -709,7 +705,7 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
     }
 }
 
-void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const
+void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root) const
 {
     for (unsigned int j = 0; j < geometry.getPolygonsCount(); j++)
     {
@@ -721,9 +717,6 @@ void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const cityg
         const std::vector<TVec3d>& vert = p.getVertices();
         materialArrays* arrays = nullptr;
 
-        if (object.getType() == citygml::CityObject::CityObjectsType::COT_RoofSurface)
-        {
-        }
             if (citygmlTex)
             {
                 auto it = ma.find(citygmlTex->getUrl());
@@ -908,34 +901,82 @@ bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, Ci
     return true;
 }
 
-bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, const osg::Vec3d& offset, unsigned int minimumLODToConsider) const
+bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider) const
 {
     osg::ref_ptr<osg::Vec4Array> roof_color = new osg::Vec4Array;
     roof_color->push_back(osg::Vec4(0.9f, 0.1f, 0.1f, 1.0f));
 
-    unsigned int highestLOD = ReaderWriterCityGML::getHighestLodForObject(object);
-
-    for (unsigned int i = 0; i < object.getGeometriesCount(); i++)
+    bool isSpecial = false;
+    if (object.getType() == citygml::CityObject::CityObjectsType::COT_Building)
     {
-        const citygml::Geometry& geometry = object.getGeometry(i);
+        std::string func = object.getAttribute("bldg:function");
+        if (func == "51002_1251")
+        {
+            std::string sheight = object.getAttribute("bldg:measuredheight");
+            float height = std::stof(sheight);
+            float scale = height / 31.0; // our model is 31 m high
+            isSpecial = true;
+            osg::ProxyNode* p = new osg::ProxyNode();
+            osg::MatrixTransform* m = new osg::MatrixTransform();
+            if (object.getGeometriesCount() > 0)
+            {
+                const citygml::Geometry& geometry = object.getGeometry(0);
+                if(geometry.getGeometriesCount()>0)
+                {
+                    const citygml::Geometry& geometry2 = geometry.getGeometry(0);
+                    if (geometry2.getPolygonsCount() > 0)
+                    {
+                        const citygml::Polygon& p = *geometry2.getPolygon(0);
+                        const std::vector<TVec3d>& vert = p.getVertices();
 
-        const unsigned int currentLOD = geometry.getLOD();
+                        TVec3d v = vert[0];
+                        TVec3d v2 = vert[1];
+                        osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
+                        osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z) - offset;
+                        osg::Vec3 diff = pt2 - pt;
+                        float angle = atan2(diff.x(), diff.y());
+                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale,scale,scale))*osg::Matrix::rotate(angle,osg::Vec3(0,0,1))*osg::Matrix::translate(pt));
+                        //break;
 
-        if (settings._useMaxLODOnly && (currentLOD < highestLOD || currentLOD < minimumLODToConsider)) {
-            continue;
+                    }
+                }
+
+            }
+
+            p->setFileName(0, "Freileitung.ive");
+            m->addChild(p);
+            root->addChild(m);
+        }
+    }
+    if (!isSpecial)
+    {
+        unsigned int highestLOD = ReaderWriterCityGML::getHighestLodForObject(object);
+
+        for (unsigned int i = 0; i < object.getGeometriesCount(); i++)
+        {
+            const citygml::Geometry& geometry = object.getGeometry(i);
+
+            const unsigned int currentLOD = geometry.getLOD();
+
+            if (settings._useMaxLODOnly && (currentLOD < highestLOD || currentLOD < minimumLODToConsider)) {
+                continue;
+            }
+
+            createSingleOsgGeometryFromCityGMLGeometry(object, geometry, settings, offset, root);
         }
 
-        createSingleOsgGeometryFromCityGMLGeometry(object,geometry, settings, offset);
+
+        // Manage transparency for windows
+        //if (object.getType() == citygml::CityObject::CityObjectsType::COT_Window)
+        //{
+        //}
+
+        for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
+        {
+            createSingleCityObject(object.getChildCityObject(i), settings, offset, root, highestLOD);
+
+        }
     }
-
-
-    // Manage transparency for windows
-    if (object.getType() == citygml::CityObject::CityObjectsType::COT_Window)
-    {
-    }
-
-    for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
-        createSingleCityObject(object.getChildCityObject(i), settings,  offset, highestLOD);
 
     return true;
 }
