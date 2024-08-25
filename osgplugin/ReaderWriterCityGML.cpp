@@ -377,7 +377,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
 				}
 				else if (it.first == "roof")
 				{
-					material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.2f, 0.2f, 0.2f, 1.0f));
+					material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.5f, 0.1f, 0.1f, 1.0f));
 				}
 				else // textured
 				{
