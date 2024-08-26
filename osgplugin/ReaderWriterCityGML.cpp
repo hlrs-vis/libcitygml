@@ -203,6 +203,8 @@ private:
     bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), osg::MatrixTransform* root=nullptr, unsigned int minimumLODToConsider = 0) const;
 
     void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object,const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root = nullptr) const;
+    void getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float& minz, const citygml::Geometry*& minGeometry) const;
+    void getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const;
 
 };
 
@@ -900,6 +902,86 @@ bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, Ci
 
     return true;
 }
+void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const
+{
+    float minz=100000.0;
+    const citygml::Geometry* minGeometry = nullptr;
+    for (unsigned int i = 0; i < object.getGeometriesCount(); i++)
+    {
+        const citygml::Geometry& geometry = object.getGeometry(i);
+        const unsigned int currentLOD = geometry.getLOD();
+        getCenterAndDirection(object, geometry, minz, minGeometry);
+    }
+    for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
+    {
+        const citygml::CityObject& obj = object.getChildCityObject(i);
+        for (unsigned int i = 0; i < obj.getGeometriesCount(); i++)
+        {
+            const citygml::Geometry& geometry = obj.getGeometry(i);
+            const unsigned int currentLOD = geometry.getLOD();
+            getCenterAndDirection(obj, geometry, minz, minGeometry);
+        }
+    }
+    if (minGeometry != nullptr)
+    {
+        if (minGeometry->getPolygonsCount() > 0)
+        {
+            const citygml::Polygon& p = *minGeometry->getPolygon(0);
+            const std::vector<TVec3d>& vert = p.getVertices();
+
+            TVec3d v = vert[0];
+            TVec3d v2 = vert[1];
+            osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z);
+            osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z);
+            direction = pt2 - pt;
+        }
+        position = osg::Vec3(0, 0, 0);
+        for (unsigned int j = 0; j < minGeometry->getPolygonsCount(); j++)
+        {
+            const citygml::Polygon& p = *minGeometry->getPolygon(j);
+            if (p.getIndices().size() == 0) continue;
+            const std::vector<TVec3d>& vert = p.getVertices();
+            osg::Vec3d pos;
+            for (unsigned int k = 0; k < vert.size(); k++)
+            {
+                TVec3d v = vert[k];
+                pos += osg::Vec3d(v.x, v.y, v.z);
+            }
+            pos /= vert.size();
+            position += pos;
+        }
+        position /= minGeometry->getPolygonsCount();
+    }
+}
+
+void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float &minz, const citygml::Geometry* &minGeometry) const
+{
+
+    for (unsigned int j = 0; j < geometry.getPolygonsCount(); j++)
+    {
+        const citygml::Polygon& p = *geometry.getPolygon(j);
+
+        if (p.getIndices().size() == 0) continue;
+
+        const std::vector<TVec3d>& vert = p.getVertices();
+        for (unsigned int k = 0; k < vert.size(); k++)
+        {
+            TVec3d v = vert[k];
+            if (v.z < minz)
+            {
+                minz = v.z;
+                minGeometry = &geometry;
+            }
+        }
+
+    }
+
+    // Parse child geoemtries
+    for (unsigned int i = 0; i < geometry.getGeometriesCount(); i++) {
+        getCenterAndDirection(object, geometry.getGeometry(i), minz, minGeometry);
+    }
+}
+
 
 bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider) const
 {
@@ -918,31 +1000,11 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             isSpecial = true;
             osg::ProxyNode* p = new osg::ProxyNode();
             osg::MatrixTransform* m = new osg::MatrixTransform();
-            if (object.getGeometriesCount() > 0)
-            {
-                const citygml::Geometry& geometry = object.getGeometry(0);
-                if(geometry.getGeometriesCount()>0)
-                {
-                    const citygml::Geometry& geometry2 = geometry.getGeometry(0);
-                    if (geometry2.getPolygonsCount() > 0)
-                    {
-                        const citygml::Polygon& p = *geometry2.getPolygon(0);
-                        const std::vector<TVec3d>& vert = p.getVertices();
-
-                        TVec3d v = vert[0];
-                        TVec3d v2 = vert[1];
-                        osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
-                        osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z) - offset;
-                        osg::Vec3 diff = pt2 - pt;
-                        float angle = atan2(diff.x(), diff.y());
-                            // in BW, cylinders start with the top, thus we have to move them down by their height, the orientation looks right as is
-                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale,scale,scale))*osg::Matrix::rotate(angle,osg::Vec3(0,0,1))*osg::Matrix::translate(pt-osg::Vec3(0,0,height)));
-                        //break;
-
-                    }
-                }
-
-            }
+            osg::Vec3d position;
+            osg::Vec3 direction;
+            getCenterAndDirection(object, position, direction);
+            float angle = atan2(direction.x(), direction.y());
+            m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(position-offset));
 
             p->setFileName(0, "Freileitung.ive");
             m->addChild(p);
@@ -956,31 +1018,11 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             isSpecial = true;
             osg::ProxyNode* p = new osg::ProxyNode();
             osg::MatrixTransform* m = new osg::MatrixTransform();
-            if (object.getGeometriesCount() > 0)
-            {
-                const citygml::Geometry& geometry = object.getGeometry(0);
-                if (geometry.getGeometriesCount() > 0)
-                {
-                    const citygml::Geometry& geometry2 = geometry.getGeometry(0);
-                    if (geometry2.getPolygonsCount() > 0)
-                    {
-                        const citygml::Polygon& p = *geometry2.getPolygon(0);
-                        const std::vector<TVec3d>& vert = p.getVertices();
-
-                        TVec3d v = vert[0];
-                        TVec3d v2 = vert[1];
-                        osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
-                        osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z) - offset;
-                        osg::Vec3 diff = pt2 - pt;
-                        float angle = atan2(diff.x(), diff.y());
-                        // in BW, cylinders start with the top, thus we have to move them down by their height, the orientation looks right as is
-                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(pt - osg::Vec3(0, 0, height)));
-                        //break;
-
-                    }
-                }
-
-            }
+            osg::Vec3d position;
+            osg::Vec3 direction;
+            getCenterAndDirection(object, position, direction);
+            float angle = atan2(direction.x(), direction.y());
+            m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(position - offset));
 
             p->setFileName(0, "Windrad.ive");
             m->addChild(p);
