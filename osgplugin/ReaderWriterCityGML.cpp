@@ -951,6 +951,7 @@ void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& objec
             position += pos;
         }
         position /= minGeometry->getPolygonsCount();
+        position[2] = minz;
     }
 }
 
