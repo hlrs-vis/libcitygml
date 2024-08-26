@@ -935,7 +935,8 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
                         osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z) - offset;
                         osg::Vec3 diff = pt2 - pt;
                         float angle = atan2(diff.x(), diff.y());
-                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale,scale,scale))*osg::Matrix::rotate(angle,osg::Vec3(0,0,1))*osg::Matrix::translate(pt));
+                            // in BW, cylinders start with the top, thus we have to move them down by their height, the orientation looks right as is
+                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale,scale,scale))*osg::Matrix::rotate(angle,osg::Vec3(0,0,1))*osg::Matrix::translate(pt-osg::Vec3(0,0,height)));
                         //break;
 
                     }
@@ -944,6 +945,44 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             }
 
             p->setFileName(0, "Freileitung.ive");
+            m->addChild(p);
+            root->addChild(m);
+        }
+        if (func == "51002_1220")
+        {
+            std::string sheight = object.getAttribute("bldg:measuredheight");
+            float height = std::stof(sheight);
+            float scale = height / 1.053; // our model is 1.053 m high
+            isSpecial = true;
+            osg::ProxyNode* p = new osg::ProxyNode();
+            osg::MatrixTransform* m = new osg::MatrixTransform();
+            if (object.getGeometriesCount() > 0)
+            {
+                const citygml::Geometry& geometry = object.getGeometry(0);
+                if (geometry.getGeometriesCount() > 0)
+                {
+                    const citygml::Geometry& geometry2 = geometry.getGeometry(0);
+                    if (geometry2.getPolygonsCount() > 0)
+                    {
+                        const citygml::Polygon& p = *geometry2.getPolygon(0);
+                        const std::vector<TVec3d>& vert = p.getVertices();
+
+                        TVec3d v = vert[0];
+                        TVec3d v2 = vert[1];
+                        osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
+                        osg::Vec3d pt2 = osg::Vec3d(v2.x, v2.y, v2.z) - offset;
+                        osg::Vec3 diff = pt2 - pt;
+                        float angle = atan2(diff.x(), diff.y());
+                        // in BW, cylinders start with the top, thus we have to move them down by their height, the orientation looks right as is
+                        m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(pt - osg::Vec3(0, 0, height)));
+                        //break;
+
+                    }
+                }
+
+            }
+
+            p->setFileName(0, "Windrad.ive");
             m->addChild(p);
             root->addChild(m);
         }
