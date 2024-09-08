@@ -997,7 +997,22 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
         {
             std::string sheight = object.getAttribute("bldg:measuredheight");
             float height = std::stof(sheight);
-            float scale = height / 31.0; // our model is 31 m high
+            float scale = 1.0;
+            std::string powerlineFile = "Freileitung.ive";
+            if(height>=30)
+            {
+                scale = height / 31.0; // our model is 31 m high
+            }
+            else if(height>=15)
+            {
+                scale = height / 20.0; 
+                powerlineFile = "Freileitung20.ive";
+            }
+            else
+            {
+                scale = height / 10.0; 
+                powerlineFile = "FreileitungSmall.ive";
+            }
             isSpecial = true;
             osg::ProxyNode* p = new osg::ProxyNode();
             osg::MatrixTransform* m = new osg::MatrixTransform();
@@ -1007,7 +1022,7 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             float angle = atan2(direction.x(), direction.y());
             m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(position-offset));
 
-            p->setFileName(0, "Freileitung.ive");
+            p->setFileName(0, powerlineFile);
             m->addChild(p);
             root->addChild(m);
         }
