@@ -329,6 +329,12 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         {
             const citygml::CityObject& object = *roots[i];
 
+            if (object.getEnvelope().validBounds()) {
+                TVec3d lb = object.getEnvelope().getLowerBound();
+                offset = osg::Vec3d(lb.x, lb.y, lb.z);
+                break;
+            }
+
             if (object.getGeometriesCount()>0)
             {
                 const citygml::Geometry& geometry = object.getGeometry(0);
