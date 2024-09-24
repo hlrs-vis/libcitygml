@@ -19,3 +19,4 @@ install
 build/
 buildRelease/
 *.autosave
+.cache
