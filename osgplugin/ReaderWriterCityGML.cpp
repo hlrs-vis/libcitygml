@@ -969,12 +969,13 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
     if (object.getType() == citygml::CityObject::CityObjectsType::COT_Building)
     {
         std::string func = object.getAttribute("bldg:function");
+        std::string fileName = "";
+        std::string sheight = object.getAttribute("bldg:measuredheight");
+        float height = std::stof(sheight);
+        float scale = 1.0;
         if (func == "51002_1251")
         {
-            std::string sheight = object.getAttribute("bldg:measuredheight");
-            float height = std::stof(sheight);
-            float scale = 1.0;
-            std::string powerlineFile = "Freileitung.ive";
+            fileName = "Freileitung.ive";
             if(height>=30)
             {
                 scale = height / 31.0; // our model is 31 m high
@@ -982,32 +983,24 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             else if(height>=15)
             {
                 scale = height / 20.0; 
-                powerlineFile = "Freileitung20.ive";
+                fileName = "Freileitung20.ive";
             }
             else
             {
                 scale = height / 10.0; 
-                powerlineFile = "FreileitungSmall.ive";
+                fileName = "FreileitungSmall.ive";
             }
             isSpecial = true;
-            osg::ProxyNode* p = new osg::ProxyNode();
-            osg::MatrixTransform* m = new osg::MatrixTransform();
-            osg::Vec3d position;
-            osg::Vec3 direction;
-            getCenterAndDirection(object, position, direction);
-            float angle = atan2(direction.x(), direction.y());
-            m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(position-offset));
-
-            p->setFileName(0, powerlineFile);
-            m->addChild(p);
-            root->addChild(m);
         }
         if (func == "51002_1220")
         {
             std::string sheight = object.getAttribute("bldg:measuredheight");
-            float height = std::stof(sheight);
-            float scale = height / 1.053; // our model is 1.053 m high
+            height = std::stof(sheight);
+            scale = height / 1.053; // our model is 1.053 m high
+            fileName = "Windrad.ive";
             isSpecial = true;
+        }
+        if (isSpecial) {
             osg::ProxyNode* p = new osg::ProxyNode();
             osg::MatrixTransform* m = new osg::MatrixTransform();
             osg::Vec3d position;
@@ -1016,7 +1009,7 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             float angle = atan2(direction.x(), direction.y());
             m->setMatrix(osg::Matrix::scale(osg::Vec3(scale, scale, scale)) * osg::Matrix::rotate(angle, osg::Vec3(0, 0, 1)) * osg::Matrix::translate(position - offset));
 
-            p->setFileName(0, "Windrad.ive");
+            p->setFileName(0, fileName);
             m->addChild(p);
             root->addChild(m);
         }
@@ -1038,19 +1031,13 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
             createSingleOsgGeometryFromCityGMLGeometry(object, map, geometry, settings, offset);
         }
 
-
-        // Manage transparency for windows
-        //if (object.getType() == citygml::CityObject::CityObjectsType::COT_Window)
-        //{
-        //}
-
         for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
         {
             createSingleCityObject(object.getChildCityObject(i), settings, map, offset, root, highestLOD);
 
         }
     }
-
+    return true;
 }
 
 unsigned int ReaderWriterCityGML::getHighestLodForObject( const citygml::CityObject& object){
