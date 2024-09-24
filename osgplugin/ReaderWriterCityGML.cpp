@@ -22,6 +22,7 @@
 #include <osg/ValueObject>
 #include <osg/ProxyNode>
 
+#include <osg/ref_ptr>
 #include <osgText/Font>
 #include <osgText/Text>
 
@@ -128,29 +129,21 @@ public:
     std::string _theme;
 };
 
-class materialArrays
+struct MaterialArrays
 {
+    MaterialArrays(int sizehint = 3) : 
+        vertices(new osg::Vec3Array(sizehint)), 
+        texCoords(new osg::Vec2Array(sizehint)),
+        indices(sizehint)
+    {}
 
-public:
-    materialArrays(int sizehint = 3)
-    {
-        texCoords = new osg::Vec2Array;
-        vertices = new osg::Vec3Array;
-        texCoords = new osg::Vec2Array;
-        indices.reserve(sizehint);
-        vertices->reserve(sizehint);
-        texCoords->reserve(sizehint);
-        texture = nullptr;
-    }
-    ~materialArrays()
-    {
-    }
-    osg::Texture2D* texture;
     std::string textureName;
+    osg::ref_ptr<osg::Texture2D> texture = nullptr;
     osg::ref_ptr<osg::Vec3Array> vertices;
     osg::ref_ptr<osg::Vec2Array> texCoords;
     std::vector<GLuint> indices;
 };
+typedef std::map<std::string, MaterialArrays*> MaterialArraysMap;
 
 class ReaderWriterCityGML : public osgDB::ReaderWriter
 {
@@ -180,36 +173,38 @@ public:
     virtual ReadResult readNode( std::istream&, const osgDB::ReaderWriter::Options* ) const override;
     virtual ReadResult readObject(const std::string& fileName, const osgDB::ReaderWriter::Options* options) const override
     {
-        ReadResult result = readNode(fileName, options);
-        osg::Node* node = result.getNode();
-        if (node) return node;
-        else return result;
+        return readObjectAdapter(fileName, options);
     }
 
     virtual ReadResult readObject(std::istream& fin, const Options* options) const override
     {
-        ReadResult result = readNode(fin, options);
-        osg::Node* node = result.getNode();
-        if (node) return node;
-        else return result;
+        return readObjectAdapter(fin, options);
     }
 
 private:
+
     std::shared_ptr<citygml::CityGMLLogger> m_logger;
     static unsigned int getHighestLodForObject(const citygml::CityObject& object);
 
+    template<typename T>
+    ReadResult readObjectAdapter(T&& input, const osgDB::ReaderWriter::Options* options) const;
     ReadResult readCity(std::shared_ptr<const citygml::CityModel>, CityGMLSettings& ) const;
     bool createCityObject(const citygml::CityObject&, CityGMLSettings&, osg::Group*, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), unsigned int minimumLODToConsider = 0) const;
-    bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), osg::MatrixTransform* root=nullptr, unsigned int minimumLODToConsider = 0) const;
-
-    void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object,const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root = nullptr) const;
+    bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, MaterialArraysMap&, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider = 0) const;
+    void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, MaterialArraysMap &, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const;
     void getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float& minz, const citygml::Geometry*& minGeometry) const;
     void getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const;
-
 };
 
-std::map<std::string, materialArrays*> ma;
-
+// use forwarding reference to avoid code duplication and to preserve type
+template<typename T>
+osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readObjectAdapter(T&& input, const osgDB::ReaderWriter::Options* options) const 
+{
+    ReadResult result = readNode(std::forward<T>(input), options);
+    osg::Node* node = result.getNode();
+    if (node) return node;
+    else return result;
+}
 
 // Register with Registry to instantiate the above reader/writer.
 REGISTER_OSGPLUGIN( citygml, ReaderWriterCityGML )
@@ -314,7 +309,6 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
 
     const citygml::ConstCityObjects& roots = city->getRootCityObjects();
 
-
     if(roots.size() == 0) return nullptr;
 
 
@@ -354,33 +348,27 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
     if(settings._singleObject)
     {
         osg::Geode* geode = new osg::Geode();
+        std::map<std::string, MaterialArrays*> matMap;
 
         // Vertices
-        materialArrays *arrW = new materialArrays();
-        ma["wall"] = arrW;
-        materialArrays* arrR = new materialArrays();
-        ma["roof"] = arrR;
+        matMap["wall"] = new MaterialArrays();
+        matMap["roof"] = new MaterialArrays();
 
-        for (unsigned int i = 0; i < roots.size(); ++i)
+        for (unsigned int i = 0; i < roots.size(); ++i) 
+            createSingleCityObject(*roots[i], settings, matMap, offset, root);
+
+        for (const auto& it : matMap)
         {
-            createSingleCityObject(*roots[i], settings, offset, root);
-        }
-        for (const auto& it : ma)
-        {
-            materialArrays* arrays = it.second;
-            if(arrays->vertices->size()>0)
+            MaterialArrays* arrays = it.second;
+            if(arrays->vertices->size()>0)https://www.geeksforgeeks.org/how-to-implement-our-own-vector-class-in-c/?ref=lbp
             {
 				osg::Geometry* geom = new osg::Geometry;
 				geom->setVertexArray(arrays->vertices);
 				osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, arrays->indices.begin(), arrays->indices.end());
 				geom->addPrimitiveSet(indices);
 
-
 				// Appearance
-
 				osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
-
-
 				osg::Material* material = new osg::Material;
 				material->setColorMode(osg::Material::OFF);
 				if (it.first == "wall")
@@ -416,9 +404,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
             }
             delete arrays;
         }
-        ma.clear();
-
-
+        matMap.clear();
         root->addChild(geode);
     }
     else
@@ -485,6 +471,7 @@ void setTextureOnly(osg::ref_ptr<osg::StateSet> stateset, osg::Geometry* geom,Ci
     cullFace->setMode(osg::CullFace::BACK);
     stateset->setAttributeAndModes(cullFace, osg::StateAttribute::ON);
 }
+
 void setTexture(osg::ref_ptr<osg::StateSet> stateset, osg::Geometry* geom, const citygml::Polygon& polygon, CityGMLSettings& settings) {
     const auto citygmlTex = polygon.getTextureFor(settings._theme);
 
@@ -616,7 +603,6 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
                 indicesVec.clear();
 
                 // Appearance
-
                 osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
 
                 setMaterial(stateset, p, settings);
@@ -627,7 +613,6 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
                     geom->addDescription(p.getId());
                 }
 #endif
-
 
                 geometryContainer->addDrawable(geom);
                 // create new Geometry
@@ -662,20 +647,12 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
                 vertices->push_back(pt);
             }
             //texcoords
-
-
-
             const std::vector<TVec2f>& texCoords = p.getTexCoordsForTheme(settings._theme, true);
 
             if (!texCoords.empty()) {
                 for (unsigned int k = 0; k < texCoords.size(); k++)
                     tex->push_back(osg::Vec2(texCoords[k].x, texCoords[k].y));
             }
-
-
-
-
-
         }
         if (vertices->size())
         {
@@ -713,7 +690,7 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
     }
 }
 
-void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root) const
+void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, MaterialArraysMap& matMap, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const
 {
     for (unsigned int j = 0; j < geometry.getPolygonsCount(); j++)
     {
@@ -723,112 +700,106 @@ void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const cityg
         if (p.getIndices().size() == 0) continue;
 
         const std::vector<TVec3d>& vert = p.getVertices();
-        materialArrays* arrays = nullptr;
+        MaterialArrays* arrays = nullptr;
 
-            if (citygmlTex)
-            {
-                auto it = ma.find(citygmlTex->getUrl());
-                if (it != ma.end())
-                    arrays = it->second;
-                else
-                {
-                    arrays = new materialArrays();
-                    arrays->textureName = citygmlTex->getUrl();
-                    ma[arrays->textureName] = arrays;
-
-                    if (settings._textureMap.find(citygmlTex->getUrl()) == settings._textureMap.end()) {
-                        std::string fullPath = osgDB::findDataFile(citygmlTex->getUrl());
-
-                        if (fullPath.empty()) {
-                            osg::notify(osg::NOTICE) << "  Texture file " << citygmlTex->getUrl() << " not found..." << std::endl;
-                            return;
-                        }
-
-                        // Load a new texture
-                        osg::notify(osg::NOTICE) << "  Loading texture " << fullPath << "..." << std::endl;
-
-                        osg::Image* image = osgDB::readImageFile(citygmlTex->getUrl());
-
-                        if (!image) {
-                            osg::notify(osg::NOTICE) << "  Warning: Failed to read Texture " << fullPath << std::endl;
-                            return;
-                        }
-
-                        arrays->texture = new osg::Texture2D;
-                        arrays->texture->setImage(image);
-                        arrays->texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
-                        arrays->texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
-                        arrays->texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
-                        arrays->texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
-                        arrays->texture->setWrap(osg::Texture::WRAP_R, osg::Texture::REPEAT);
-
-                        settings._textureMap[citygmlTex->getUrl()] = arrays->texture;
-                    }
-                    else {
-                        arrays->texture = settings._textureMap[citygmlTex->getUrl()];
-                    }
-                }
-            }
+        if (citygmlTex)
+        {
+            auto it = matMap.find(citygmlTex->getUrl());
+            if (it != matMap.end())
+                arrays = it->second;
             else
             {
-                if (object.getType() == citygml::CityObject::CityObjectsType::COT_RoofSurface)
-                {
-                    auto it = ma.find("roof");
-                    if (it != ma.end())
-                        arrays = it->second;
-                }
-                else if (object.getType() == citygml::CityObject::CityObjectsType::COT_WallSurface)
-                {
-                    auto it = ma.find("wall");
-                    if (it != ma.end())
-                        arrays = it->second;
-                }
-                else if (object.getType() == citygml::CityObject::CityObjectsType::COT_BuildingPart)
-                {
-                    auto it = ma.find("wall");
-                    if (it != ma.end())
-                        arrays = it->second;
-                }
-                else if (object.getType() == citygml::CityObject::CityObjectsType::COT_Building)
-                {
-                    auto it = ma.find("wall");
-                    if (it != ma.end())
-                        arrays = it->second;
-                }
-            }
-            if(arrays)
-            {
-				GLuint startIndex = arrays->vertices->size();
-				for (const auto& i : p.getIndices())
-				{
-					arrays->indices.push_back(i + startIndex);
-				}
+                arrays = new MaterialArrays();
+                arrays->textureName = citygmlTex->getUrl();
+                matMap[arrays->textureName] = arrays;
 
-				for (unsigned int k = 0; k < vert.size(); k++)
-				{
-					TVec3d v = vert[k];
-					osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
-					arrays->vertices->push_back(pt);
-				}
-                if (citygmlTex)
-                {
-                    const std::vector<TVec2f>& texCoords = p.getTexCoordsForTheme(settings._theme, true);
+                if (settings._textureMap.find(citygmlTex->getUrl()) == settings._textureMap.end()) {
+                    std::string fullPath = osgDB::findDataFile(citygmlTex->getUrl());
 
-                    if (!texCoords.empty()) {
-                        for (unsigned int k = 0; k < texCoords.size(); k++)
-                            arrays->texCoords->push_back(osg::Vec2(texCoords[k].x, texCoords[k].y));
+                    if (fullPath.empty()) {
+                        osg::notify(osg::NOTICE) << "  Texture file " << citygmlTex->getUrl() << " not found..." << std::endl;
+                        return;
                     }
+
+                    // Load a new texture
+                    osg::notify(osg::NOTICE) << "  Loading texture " << fullPath << "..." << std::endl;
+
+                    osg::Image* image = osgDB::readImageFile(citygmlTex->getUrl());
+
+                    if (!image) {
+                        osg::notify(osg::NOTICE) << "  Warning: Failed to read Texture " << fullPath << std::endl;
+                        return;
+                    }
+
+                    arrays->texture = new osg::Texture2D;
+                    arrays->texture->setImage(image);
+                    arrays->texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
+                    arrays->texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+                    arrays->texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+                    arrays->texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+                    arrays->texture->setWrap(osg::Texture::WRAP_R, osg::Texture::REPEAT);
+
+                    settings._textureMap[citygmlTex->getUrl()] = arrays->texture;
+                }
+                else {
+                    arrays->texture = settings._textureMap[citygmlTex->getUrl()];
                 }
             }
+        }
+        else
+        {
+            auto findInMatMap = [&matMap, &arrays](const std::string &name){
+                auto it = matMap.find("roof");
+                if (it != matMap.end())
+                    arrays = it->second;
+            };
+            switch (object.getType())
+            {
+                case citygml::CityObject::CityObjectsType::COT_RoofSurface:
+                {
+                    findInMatMap("roof");
+                    break;
+                }
+                case citygml::CityObject::CityObjectsType::COT_BuildingPart:
+                case citygml::CityObject::CityObjectsType::COT_Building:
+                case citygml::CityObject::CityObjectsType::COT_WallSurface:
+                {
+                    findInMatMap("wall");
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        if(arrays)
+        {
+			GLuint startIndex = arrays->vertices->size();
+			for (const auto& i : p.getIndices())
+			{
+				arrays->indices.push_back(i + startIndex);
+			}
 
+			for (unsigned int k = 0; k < vert.size(); k++)
+			{
+				TVec3d v = vert[k];
+				osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
+				arrays->vertices->push_back(pt);
+			}
+            if (citygmlTex)
+            {
+                const std::vector<TVec2f>& texCoords = p.getTexCoordsForTheme(settings._theme, true);
 
-        // Indices
-        //osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, p.getIndices().begin(), p.getIndices().end());
+                if (!texCoords.empty()) {
+                    for (unsigned int k = 0; k < texCoords.size(); k++)
+                        arrays->texCoords->push_back(osg::Vec2(texCoords[k].x, texCoords[k].y));
+                }
+            }
+        }
     }
 
     // Parse child geoemtries
     for (unsigned int i = 0; i < geometry.getGeometriesCount(); i++) {
-        createSingleOsgGeometryFromCityGMLGeometry(object, geometry.getGeometry(i), settings, offset);
+        createSingleOsgGeometryFromCityGMLGeometry(object, matMap, geometry.getGeometry(i), settings, offset);
     }
 }
 
@@ -989,8 +960,7 @@ void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& objec
     }
 }
 
-
-bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider) const
+bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, MaterialArraysMap& map, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider) const
 {
     osg::ref_ptr<osg::Vec4Array> roof_color = new osg::Vec4Array;
     roof_color->push_back(osg::Vec4(0.9f, 0.1f, 0.1f, 1.0f));
@@ -1065,7 +1035,7 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
                 continue;
             }
 
-            createSingleOsgGeometryFromCityGMLGeometry(object, geometry, settings, offset, root);
+            createSingleOsgGeometryFromCityGMLGeometry(object, map, geometry, settings, offset);
         }
 
 
@@ -1076,12 +1046,11 @@ bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& obje
 
         for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
         {
-            createSingleCityObject(object.getChildCityObject(i), settings, offset, root, highestLOD);
+            createSingleCityObject(object.getChildCityObject(i), settings, map, offset, root, highestLOD);
 
         }
     }
 
-    return true;
 }
 
 unsigned int ReaderWriterCityGML::getHighestLodForObject( const citygml::CityObject& object){
