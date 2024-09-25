@@ -737,22 +737,26 @@ void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& objec
 {
     float minz=100000.0;
     const citygml::Geometry* minGeometry = nullptr;
-    for (unsigned int i = 0; i < object.getGeometriesCount(); i++)
-    {
-        const citygml::Geometry& geometry = object.getGeometry(i);
-        const unsigned int currentLOD = geometry.getLOD();
-        getCenterAndDirection(object, geometry, minz, minGeometry);
-    }
-    for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
-    {
-        const citygml::CityObject& obj = object.getChildCityObject(i);
-        for (unsigned int i = 0; i < obj.getGeometriesCount(); i++)
+    auto iterOverObjAndGetMinGeo = [&](const citygml::CityObject& object, float &minz) {
+        for (unsigned int i = 0; i < object.getGeometriesCount(); ++i)
         {
-            const citygml::Geometry& geometry = obj.getGeometry(i);
+            const citygml::Geometry& geometry = object.getGeometry(i);
             const unsigned int currentLOD = geometry.getLOD();
-            getCenterAndDirection(obj, geometry, minz, minGeometry);
+            minGeometry = getMinGeometry(object, geometry, minz);
         }
+    };
+    auto childCityObjectsCount = object.getChildCityObjectsCount();
+    if (childCityObjectsCount > 0)
+    {
+        for (unsigned int i = 0; i < childCityObjectsCount; ++i)
+        {
+            const citygml::CityObject& obj = object.getChildCityObject(i);
+            iterOverObjAndGetMinGeo(obj, minz);
+        }
+    } else {
+        iterOverObjAndGetMinGeo(object, minz);
     }
+
     if (minGeometry != nullptr)
     {
         if (minGeometry->getPolygonsCount() > 0)
@@ -786,16 +790,15 @@ void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& objec
     }
 }
 
-void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float &minz, const citygml::Geometry* &minGeometry) const
+const citygml::Geometry* ReaderWriterCityGML::getMinGeometry(const citygml::CityObject& object, const citygml::Geometry& geometry, float &minz) const
 {
-
+    const citygml::Geometry* minGeometry = nullptr;
     for (unsigned int j = 0; j < geometry.getPolygonsCount(); j++)
     {
-        const citygml::Polygon& p = *geometry.getPolygon(j);
+        auto p = geometry.getPolygon(j);
+        if (p->getIndices().size() == 0) continue;
 
-        if (p.getIndices().size() == 0) continue;
-
-        const std::vector<TVec3d>& vert = p.getVertices();
+        const std::vector<TVec3d>& vert = p->getVertices();
         for (unsigned int k = 0; k < vert.size(); k++)
         {
             TVec3d v = vert[k];
@@ -805,13 +808,14 @@ void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& objec
                 minGeometry = &geometry;
             }
         }
-
     }
 
     // Parse child geoemtries
     for (unsigned int i = 0; i < geometry.getGeometriesCount(); i++) {
-        getCenterAndDirection(object, geometry.getGeometry(i), minz, minGeometry);
+        minGeometry = getMinGeometry(object, geometry.getGeometry(i), minz);
     }
+    
+    return minGeometry;
 }
 
 bool ReaderWriterCityGML::createSingleCityObject(const citygml::CityObject& object, CityGMLSettings& settings, MaterialArraysMap& map, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider) const

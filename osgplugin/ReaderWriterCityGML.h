@@ -70,7 +70,7 @@ private:
     bool createCityObject(const citygml::CityObject&, CityGMLSettings&, osg::Group*, const osg::Vec3d& offset = osg::Vec3d(0.0, 0.0, 0.0), unsigned int minimumLODToConsider = 0) const;
     bool createSingleCityObject(const citygml::CityObject&, CityGMLSettings&, MaterialArraysMap&, const osg::Vec3d& offset, osg::MatrixTransform* root, unsigned int minimumLODToConsider = 0) const;
     void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, MaterialArraysMap &, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const;
-    void getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float& minz, const citygml::Geometry*& minGeometry) const;
+    const citygml::Geometry* getMinGeometry(const citygml::CityObject& object, const citygml::Geometry& geometry, float &minz) const;
     void getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const;
     void handleCityAsSingleObject(CityGMLSettings& settings, const citygml::ConstCityObjects& roots, const osg::Vec3d& offset, osg::MatrixTransform* root) const;
     void applyMaterialForSingleObject(MaterialArraysMap &matMap, osg::ref_ptr<osg::Geode> geode) const;
