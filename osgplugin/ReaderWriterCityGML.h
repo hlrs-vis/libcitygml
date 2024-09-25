@@ -26,24 +26,7 @@ public:
     };
 
     typedef std::map<std::string, MaterialArrays*> MaterialArraysMap;
-    ReaderWriterCityGML( void )
-    {
-        supportsExtension( "citygml", "CityGML format" );
-        supportsExtension( "gml", "CityGML format" );
-
-        supportsOption( "names", "Add the name of the city objects on top of them" );
-        supportsOption( "mask", "Set the objects mask" );
-        supportsOption( "minLOD", "Minimum LOD level to fetch" );
-        supportsOption( "maxLOD", "Maximum LOD level to fetch" );
-        supportsOption( "optimize", "Optimize the geometries & polygons of the CityGML model to reduce the number of instanced objects" );
-        supportsOption( "pruneEmptyObjects", "Prune empty objects (ie. without -supported- geometry)" );
-        supportsOption( "destSRS", "Transform geometry to given reference system" );
-        supportsOption( "useMaxLODonly", "Use the highest available LOD for geometry of one object" );
-        supportsOption( "appearanceTheme", "Name of the appearance theme to use" );
-        supportsOption( "storegeomids", "Store the citygml id of geometry objects in the corresponding osg::Geometry object as a description string." );
-
-        m_logger = std::make_shared<CityGMLOSGPluginLogger>();
-    }
+    ReaderWriterCityGML();
 
     virtual const char* className( void ) const override { return "CityGML Reader"; }
 

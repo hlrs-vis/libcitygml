@@ -49,8 +49,27 @@
 
 #include <cctype>
 
-// Register with Registry to instantiate the above reader/writer.
+// Register with Registry to instantiate the reader/writer.
 REGISTER_OSGPLUGIN( citygml, ReaderWriterCityGML )
+
+ReaderWriterCityGML::ReaderWriterCityGML()
+{
+    supportsExtension( "citygml", "CityGML format" );
+    supportsExtension( "gml", "CityGML format" );
+
+    supportsOption( "names", "Add the name of the city objects on top of them" );
+    supportsOption( "mask", "Set the objects mask" );
+    supportsOption( "minLOD", "Minimum LOD level to fetch" );
+    supportsOption( "maxLOD", "Maximum LOD level to fetch" );
+    supportsOption( "optimize", "Optimize the geometries & polygons of the CityGML model to reduce the number of instanced objects" );
+    supportsOption( "pruneEmptyObjects", "Prune empty objects (ie. without -supported- geometry)" );
+    supportsOption( "destSRS", "Transform geometry to given reference system" );
+    supportsOption( "useMaxLODonly", "Use the highest available LOD for geometry of one object" );
+    supportsOption( "appearanceTheme", "Name of the appearance theme to use" );
+    supportsOption( "storegeomids", "Store the citygml id of geometry objects in the corresponding osg::Geometry object as a description string." );
+
+    m_logger = std::make_shared<CityGMLOSGPluginLogger>();
+}
 
 // Read CityGML file using libcitygml and generate the OSG scenegraph
 osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readNode( const std::string& file, const osgDB::ReaderWriter::Options* options ) const
@@ -269,9 +288,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
 
 
     osg::notify(osg::NOTICE) << "Done." << std::endl;
-    root->setMatrix(
-        osg::Matrixd::translate(offset));
-
+    root->setMatrix(osg::Matrixd::translate(offset));
     return root;
 }
 
