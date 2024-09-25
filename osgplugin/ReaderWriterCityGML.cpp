@@ -112,8 +112,8 @@ public:
             else if ( currentOption == "maxlod" ) iss >> _params.maxLOD;
             else if ( currentOption == "optimize" ) _params.optimize = true;
             else if ( currentOption == "pruneemptyobjects" ) _params.pruneEmptyObjects = true;
-            else if (currentOption == "usemaxlodonly") _useMaxLODOnly = true;
-            else if (currentOption == "singleobject") _singleObject = true;
+            else if ( currentOption == "usemaxlodonly") _useMaxLODOnly = true;
+            else if ( currentOption == "singleobject") _singleObject = true;
             else if ( currentOption == "usetheme" ) iss >> _theme;
             else if ( currentOption == "storegeomids" ) _storeGeomIDs = true;
         }
@@ -194,6 +194,8 @@ private:
     void createSingleOsgGeometryFromCityGMLGeometry(const citygml::CityObject& object, MaterialArraysMap &, const citygml::Geometry& geometry, CityGMLSettings& settings, const osg::Vec3d& offset) const;
     void getCenterAndDirection(const citygml::CityObject& object, const citygml::Geometry& geometry, float& minz, const citygml::Geometry*& minGeometry) const;
     void getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const;
+    void handleCityAsSingleObject(CityGMLSettings& settings, const citygml::ConstCityObjects& roots, const osg::Vec3d& offset, osg::MatrixTransform* root) const;
+    void applyMaterialForSingleObject(MaterialArraysMap &matMap, osg::ref_ptr<osg::Geode> geode) const;
 };
 
 // use forwarding reference to avoid code duplication and to preserve type
@@ -292,6 +294,76 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readNode( std::istream& fin
     return rr;
 }
 
+void ReaderWriterCityGML::applyMaterialForSingleObject(MaterialArraysMap &matMap, osg::ref_ptr<osg::Geode> geode) const
+{
+    for (const auto& it : matMap)
+    {
+        auto arrays = it.second;
+        if(arrays->vertices->size() > 0)
+        {
+			osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+			geom->setVertexArray(arrays->vertices);
+			osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, arrays->indices.begin(), arrays->indices.end());
+			geom->addPrimitiveSet(indices);
+
+			// Appearance
+			osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
+			osg::ref_ptr<osg::Material> material = new osg::Material;
+			material->setColorMode(osg::Material::OFF);
+			if (it.first == "wall")
+			{
+				material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.9f, 0.9f, 0.9f, 1.0f));
+			}
+			else if (it.first == "roof")
+			{
+				material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.5f, 0.1f, 0.1f, 1.0f));
+			}
+			else // textured
+			{
+				material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+                if (arrays->texture)
+                {
+                    if (arrays->texCoords->size() > 0)
+                    {
+                        geom->setTexCoordArray(0, arrays->texCoords);
+
+						stateset->setTextureAttributeAndModes(0, arrays->texture, osg::StateAttribute::ON);
+                    }
+                }
+			}
+			material->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+			material->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			material->setShininess(osg::Material::FRONT_AND_BACK, 128.f * 0.5f);
+			material->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(0.1f, 0.1f, 0.1f, 1.0f));
+			stateset->setAttributeAndModes(material, osg::StateAttribute::ON);
+			stateset->setMode(GL_LIGHTING, osg::StateAttribute::ON); 
+            osg::ref_ptr<osg::CullFace> cullFace = new osg::CullFace();
+			cullFace->setMode(osg::CullFace::BACK);
+			stateset->setAttributeAndModes(cullFace, osg::StateAttribute::ON);
+			geode->addDrawable(geom);
+        }
+        delete arrays;
+    }
+}
+
+void ReaderWriterCityGML::handleCityAsSingleObject(CityGMLSettings& settings, const citygml::ConstCityObjects& roots, const osg::Vec3d& offset, osg::MatrixTransform* root) const
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    MaterialArraysMap matMap;
+
+    // Vertices
+    matMap["wall"] = new MaterialArrays();
+    matMap["roof"] = new MaterialArrays();
+
+    for (unsigned int i = 0; i < roots.size(); ++i) 
+        createSingleCityObject(*roots[i], settings, matMap, offset, root);
+    
+    applyMaterialForSingleObject(matMap, geode);
+
+    matMap.clear();
+    root->addChild(geode);
+}
+
 osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<const citygml::CityModel> city, CityGMLSettings& settings ) const
 {
     if ( !city ) return nullptr;
@@ -347,65 +419,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
     }
     if(settings._singleObject)
     {
-        osg::Geode* geode = new osg::Geode();
-        std::map<std::string, MaterialArrays*> matMap;
-
-        // Vertices
-        matMap["wall"] = new MaterialArrays();
-        matMap["roof"] = new MaterialArrays();
-
-        for (unsigned int i = 0; i < roots.size(); ++i) 
-            createSingleCityObject(*roots[i], settings, matMap, offset, root);
-
-        for (const auto& it : matMap)
-        {
-            MaterialArrays* arrays = it.second;
-            if(arrays->vertices->size()>0)https://www.geeksforgeeks.org/how-to-implement-our-own-vector-class-in-c/?ref=lbp
-            {
-				osg::Geometry* geom = new osg::Geometry;
-				geom->setVertexArray(arrays->vertices);
-				osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, arrays->indices.begin(), arrays->indices.end());
-				geom->addPrimitiveSet(indices);
-
-				// Appearance
-				osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
-				osg::Material* material = new osg::Material;
-				material->setColorMode(osg::Material::OFF);
-				if (it.first == "wall")
-				{
-					material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.9f, 0.9f, 0.9f, 1.0f));
-				}
-				else if (it.first == "roof")
-				{
-					material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0.5f, 0.1f, 0.1f, 1.0f));
-				}
-				else // textured
-				{
-					material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-                    if (arrays->texture)
-                    {
-                        if (arrays->texCoords->size() > 0)
-                        {
-                            geom->setTexCoordArray(0, arrays->texCoords);
-
-							stateset->setTextureAttributeAndModes(0, arrays->texture, osg::StateAttribute::ON);
-                        }
-                    }
-				}
-				material->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-				material->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
-				material->setShininess(osg::Material::FRONT_AND_BACK, 128.f * 0.5f);
-				material->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(0.1f, 0.1f, 0.1f, 1.0f));
-				stateset->setAttributeAndModes(material, osg::StateAttribute::ON);
-				stateset->setMode(GL_LIGHTING, osg::StateAttribute::ON); osg::CullFace* cullFace = new osg::CullFace();
-				cullFace->setMode(osg::CullFace::BACK);
-				stateset->setAttributeAndModes(cullFace, osg::StateAttribute::ON);
-				geode->addDrawable(geom);
-            }
-            delete arrays;
-        }
-        matMap.clear();
-        root->addChild(geode);
+        handleCityAsSingleObject(settings, roots, offset, root);
     }
     else
     {
@@ -678,8 +692,6 @@ void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, Cit
 				geom->addDescription(p.getId());
 			}
 #endif
-
-
 			geometryContainer->addDrawable(geom);
         }
     }
@@ -879,6 +891,7 @@ bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, Ci
 
     return true;
 }
+
 void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const
 {
     float minz=100000.0;
