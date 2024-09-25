@@ -9,8 +9,9 @@ include_directories(
 )
 
 set( sources ReaderWriterCityGML.cpp )
+set( headers ReaderWriterCityGML.h CityGMLSettings.h ReaderWriterCityGML.h CityGMLOSGPluginLogger.h)
 
-add_library(${target} SHARED ${sources})
+add_library(${target} SHARED ${sources} ${headers})
 set_target_properties(${target} PROPERTIES PREFIX "")
 if(APPLE)
     SET(CMAKE_SHARED_LIBRARY_SUFFIX ".so")
