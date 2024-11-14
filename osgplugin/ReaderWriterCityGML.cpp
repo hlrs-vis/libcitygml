@@ -7,6 +7,8 @@
 
 #include <osg/Array>
 #include <osg/Node>
+#include <osg/Group>
+#include <osg/Image>
 #include <osg/MatrixTransform>
 #include <osg/Geode>
 #include <osg/Geometry>
@@ -58,6 +60,7 @@ ReaderWriterCityGML::ReaderWriterCityGML()
     supportsExtension( "gml", "CityGML format" );
 
     supportsOption( "names", "Add the name of the city objects on top of them" );
+    supportsOption( "separateBuildingParts", "Separates building into all its building parts" );
     supportsOption( "mask", "Set the objects mask" );
     supportsOption( "minLOD", "Minimum LOD level to fetch" );
     supportsOption( "maxLOD", "Maximum LOD level to fetch" );
@@ -277,15 +280,13 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
             }
         }
     }
+
     if(settings._singleObject)
     {
         handleCityAsSingleObject(settings, roots, offset, root);
-    }
-    else
-    {
+    } else {
         for (unsigned int i = 0; i < roots.size(); ++i) createCityObject(*roots[i], settings, root, offset);
     }
-
 
     osg::notify(osg::NOTICE) << "Done." << std::endl;
     root->setMatrix(osg::Matrixd::translate(offset));
@@ -438,6 +439,7 @@ void setMaterial(osg::ref_ptr<osg::StateSet> stateset, const citygml::Polygon& p
     cullFace->setMode(osg::CullFace::BACK);
     stateset->setAttributeAndModes(cullFace, osg::StateAttribute::ON);
 }
+
 
 void createOsgGeometryFromCityGMLGeometry(const citygml::Geometry& geometry, CityGMLSettings& settings, osg::Geode* geometryContainer, const osg::Vec3d& offset ) {
 
@@ -673,11 +675,190 @@ void ReaderWriterCityGML::createSingleOsgGeometryFromCityGMLGeometry(const cityg
     }
 }
 
-bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, CityGMLSettings& settings, osg::Group* parent, const osg::Vec3d& offset , unsigned int minimumLODToConsider) const
-{
-    // Skip objects without geometry
-    if ( !parent ) return false;
+// bool ReaderWriterCityGML::createCityObjectWithSeparateBuildingParts(const citygml::CityObject& object, 
+//     const CityGMLSettings& settings, osg::Group* grp, 
+//     const osg::Vec3d& offset, unsigned int minimumLODToConsider) const {
+    
+// /*     std::string texName = "axaxaxax";
+//     if (geometry.getPolygonsCount() > 0)
+//     {
+//         osg::Geometry* geom = new osg::Geometry;
+//         geom->setUserValue("cot_type", geometry.getTypeAsString());
+//         osg::Vec3Array* vertices = new osg::Vec3Array;
+//         osg::ref_ptr<osg::Vec2Array> tex = new osg::Vec2Array;
+//         tex->reserve(3);
+//         vertices->reserve(3);
+//         std::vector<GLuint> indicesVec;
+//         indicesVec.reserve(2);
 
+//         for (unsigned int j = 0; j < geometry.getPolygonsCount(); j++)
+//         {
+//             const citygml::Polygon& p = *geometry.getPolygon(j);
+//             const auto citygmlTex = p.getTextureFor(settings._theme);
+
+//             if (p.getIndices().size() == 0) continue;
+
+//             // Geometry management
+//             if (texName != "axaxaxax" && (citygmlTex != nullptr && (citygmlTex->getUrl() != texName)) || (citygmlTex == nullptr && (texName != "")))
+//             {
+//                 geom->setVertexArray(vertices);
+//                 if (tex->size() > 0)
+//                     geom->setTexCoordArray(0, tex);
+
+//                 // Indices
+//                 osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, indicesVec.begin(), indicesVec.end());
+//                 geom->addPrimitiveSet(indices);
+//                 indicesVec.clear();
+
+//                 // Appearance
+//                 osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
+
+//                 setMaterial(stateset, p, settings);
+//                 osg::ref_ptr<osg::Image> image;
+//                 if (geometry.getType() == citygml::Geometry::GeometryType::GT_Wall) {
+//                     osg::notify(osg::NOTICE) << "  GEOMETRY TYPE " << geometry.getTypeAsString() << "\n";
+//                     image = osgDB::readImageFile("/home/hpcmdjur/data/textures/cracked_concrete_wall_1k.blend/textures/cracked_concrete_wall_diff_1k.jpg");
+//                     // osg::ref_ptr<osg::Image> image = osgDB::readImageFile("/home/hpcmdjur/data/textures/cracked_concrete_wall_1k.blend/textures/ConcreteWallDifuse.png");
+//                     osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D;
+//                     texture->setImage(image);
+//                     texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
+//                     texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+//                     texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+//                     texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+//                     texture->setWrap(osg::Texture::WRAP_R, osg::Texture::REPEAT);
+//                     texture->setTextureSize(1024, 1024);
+                    
+//                     stateset->setTextureAttributeAndModes(0, texture, osg::StateAttribute::ON);
+//                     osg::CullFace* cullFace = new osg::CullFace();
+//                     cullFace->setMode(osg::CullFace::BACK);
+//                     stateset->setAttributeAndModes(cullFace, osg::StateAttribute::ON);
+//                 }
+
+// #if OSG_VERSION_GREATER_OR_EQUAL(3,3,2)
+//                 if (settings._storeGeomIDs) {
+//                     geom->addDescription(p.getId());
+//                 }
+// #endif
+
+//                 geometryContainer->addDrawable(geom);
+
+//                 // create new Geometry
+//                 geom = new osg::Geometry;
+//                 geom->setUserValue("cot_type", geometry.getTypeAsString());
+//                 vertices = new osg::Vec3Array;
+//                 tex = new osg::Vec2Array;
+//                 vertices->reserve(3);
+//                 tex->reserve(3);
+
+//             }
+
+//             if (citygmlTex == nullptr)
+//                 texName = "default";
+//             else
+// 				texName = citygmlTex->getUrl();
+//             geom->setName(p.getId());
+
+
+//             GLuint startIndex = vertices->size();
+//             for (const auto& i : p.getIndices())
+//             {
+//                 indicesVec.push_back(i+ startIndex);
+//             }
+
+//             // Vertices
+//             const std::vector<TVec3d>& vert = p.getVertices();
+//             for (unsigned int k = 0; k < vert.size(); k++)
+//             {
+//                 TVec3d v = vert[k];
+//                 osg::Vec3d pt = osg::Vec3d(v.x, v.y, v.z) - offset;
+//                 vertices->push_back(pt);
+//             }
+//             //texcoords
+//             const std::vector<TVec2f>& texCoords = p.getTexCoordsForTheme(settings._theme, true);
+
+//             if (!texCoords.empty()) {
+//                 for (unsigned int k = 0; k < texCoords.size(); k++)
+//                     tex->push_back(osg::Vec2(texCoords[k].x, texCoords[k].y));
+//             } else {
+//                 tex->push_back(osg::Vec2(0.0, 0.0));
+//                 tex->push_back(osg::Vec2(2.0, 0.0));
+//                 tex->push_back(osg::Vec2(2.0, 1.0));
+//                 tex->push_back(osg::Vec2(0.0, 1.0));
+//             }
+//         }
+//         if (vertices->size())
+//         {
+//             const citygml::Polygon& p = *geometry.getPolygon(geometry.getPolygonsCount() - 1);
+//             geom->setVertexArray(vertices);
+//             if (tex->size() > 0)
+// 				geom->setTexCoordArray(0, tex);
+
+// 			// Indices
+// 			osg::DrawElementsUInt* indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, indicesVec.begin(), indicesVec.end());
+// 			geom->addPrimitiveSet(indices);
+
+// 			// Appearance
+// 			osg::ref_ptr<osg::StateSet> stateset = geom->getOrCreateStateSet();
+
+// 			setMaterial(stateset, p, settings);
+//             const auto citygmlTex = p.getTextureFor(settings._theme);
+// 			setTextureOnly(stateset, geom, settings,citygmlTex);
+
+// #if OSG_VERSION_GREATER_OR_EQUAL(3,3,2)
+// 			if (settings._storeGeomIDs) {
+// 				geom->addDescription(p.getId());
+// 			}
+// #endif
+// 			geometryContainer->addDrawable(geom);
+//         }
+//     } */
+// }
+
+void ReaderWriterCityGML::printCityObjectNames(osg::Geode *geode,
+                                               const citygml::CityObject &object) const {
+    // Print the city object name on top of it
+    geode->getBoundingBox().center();
+    osg::ref_ptr<osgText::Text> text = new osgText::Text;
+    text->setFont("arial.ttf");
+    text->setCharacterSize(2);
+    text->setBackdropType(osgText::Text::OUTLINE);
+    text->setFontResolution(64, 64);
+    text->setText(object.getId(), osgText::String::ENCODING_UTF8);
+    text->setCharacterSizeMode(
+        osgText::TextBase::OBJECT_COORDS_WITH_MAXIMUM_SCREEN_SIZE_CAPPED_BY_FONT_HEIGHT);
+    text->setAxisAlignment(osgText::TextBase::SCREEN);
+    text->setAlignment(osgText::TextBase::CENTER_BOTTOM);
+    text->setPosition(geode->getBoundingBox().center() +
+                      osg::Vec3(0, 0, geode->getBoundingBox().radius()));
+    text->getOrCreateStateSet()->setMode(GL_LIGHTING,
+                                         osg::StateAttribute::OVERRIDE | osg::StateAttribute::OFF);
+    geode->addDrawable(text.get());
+}
+
+void ReaderWriterCityGML::handleWindowTransparency(osg::Geode *geode) const {
+    osg::StateSet *geodeSS(geode->getOrCreateStateSet());
+
+    osg::ref_ptr<osg::BlendFunc> blendFunc = new osg::BlendFunc(
+        osg::BlendFunc::ONE_MINUS_CONSTANT_ALPHA, osg::BlendFunc::CONSTANT_ALPHA);
+    geodeSS->setAttributeAndModes(blendFunc.get(),
+                                  osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
+
+    osg::ref_ptr<osg::BlendColor> blendColor = new osg::BlendColor(osg::Vec4(1., 1., 1., 0.4));
+    geodeSS->setAttributeAndModes(blendColor.get(),
+                                  osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
+
+    osg::ref_ptr<osg::Depth> depth = new osg::Depth;
+    depth->setWriteMask(false);
+    geodeSS->setAttributeAndModes(depth.get(),
+                                  osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
+
+    geodeSS->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+}
+
+bool ReaderWriterCityGML::createSingleCityObjectGeode(const citygml::CityObject &object,
+                                                      CityGMLSettings &settings, osg::Group *parent,
+                                                      const osg::Vec3d &offset,
+                                                      unsigned int minimumLODToConsider) const {
     osg::ref_ptr<osg::Geode> geode = new osg::Geode;
     geode->setName( object.getId() );
 
@@ -687,16 +868,12 @@ bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, Ci
     grp->addChild( geode );
     parent->addChild( grp );
 
-    osg::ref_ptr<osg::Vec4Array> roof_color = new osg::Vec4Array;
-    roof_color->push_back( osg::Vec4( 0.9f, 0.1f, 0.1f, 1.0f ) );
-
     unsigned int highestLOD = ReaderWriterCityGML::getHighestLodForObject(object);
 
     bool gotGeometry = false;
-    for ( unsigned int i = 0; i < object.getGeometriesCount(); i++ )
+    for ( unsigned int i = 0; i < object.getGeometriesCount(); ++i )
     {
         const citygml::Geometry& geometry = object.getGeometry( i );
-
         const unsigned int currentLOD = geometry.getLOD();
 
         if (settings._useMaxLODOnly && (currentLOD < highestLOD || currentLOD < minimumLODToConsider )){
@@ -741,13 +918,83 @@ bool ReaderWriterCityGML::createCityObject(const citygml::CityObject& object, Ci
 
         geodeSS->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
     }
+
     if(!gotGeometry)
     {
 		for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i)
 			createCityObject(object.getChildCityObject(i), settings, grp, offset, highestLOD);
-	}
+    }
 
     return true;
+}
+
+bool ReaderWriterCityGML::createSeparateCityObjectGeode(const citygml::CityObject &object,
+                                                        CityGMLSettings &settings,
+                                                        osg::Group *parent, osg::Geode *geode,
+                                                        const osg::Vec3d &offset,
+                                                        unsigned int minimumLODToConsider) const {
+    if (!parent) return false;
+    if (!geode) {
+        osg::ref_ptr<osg::Group> grp = new osg::Group;
+        grp->setName(object.getId());
+        grp->setUserValue("cot_type", object.getTypeAsString());
+        grp->addChild(geode);
+        parent->addChild(grp);
+
+        parent = grp;
+    }
+
+    unsigned int highestLOD = ReaderWriterCityGML::getHighestLodForObject(object);
+    std::map<std::string, osg::ref_ptr<osg::Geode>> parts;
+
+    // Parse BuildingParts
+    for (unsigned int i = 0; i < object.getChildCityObjectsCount(); ++i) {
+        const auto &child = object.getChildCityObject(i);
+        const auto &type = child.getTypeAsString();
+        osg::ref_ptr<osg::Geode> partGeode;
+        if (parts.find(type) == parts.end()) {
+            partGeode = new osg::Geode;
+            partGeode->setName(type);
+
+            osg::ref_ptr<osg::Group> partGrp = new osg::Group;
+            partGrp->setName(type);
+            partGrp->addChild(partGeode);
+            parent->addChild(partGrp);
+
+            parts[type] = partGeode;
+        } else {
+            partGeode = parts.at(type);
+        }
+        for (unsigned int i = 0; i < child.getGeometriesCount(); ++i) {
+            const citygml::Geometry &geometry = child.getGeometry(i);
+            const unsigned int currentLOD = geometry.getLOD();
+
+            if (settings._useMaxLODOnly &&
+                (currentLOD < highestLOD || currentLOD < minimumLODToConsider)) {
+                continue;
+            }
+            createOsgGeometryFromCityGMLGeometry(geometry, settings, partGeode, offset);
+        }
+    }
+
+    return true;
+}
+
+bool ReaderWriterCityGML::createCityObject(const citygml::CityObject &object,
+                                           CityGMLSettings &settings, osg::Group *parent,
+                                           const osg::Vec3d &offset,
+                                           unsigned int minimumLODToConsider) const
+{
+
+    // Skip objects without geometry
+    if (!parent) return false;
+
+    if (settings._separateBuildingParts) {
+        return createSeparateCityObjectGeode(object, settings, parent, nullptr, offset,
+                                             minimumLODToConsider);
+    }
+
+    return createSingleCityObjectGeode(object, settings, parent, offset, minimumLODToConsider);
 }
 
 void ReaderWriterCityGML::getCenterAndDirection(const citygml::CityObject& object, osg::Vec3d& position, osg::Vec3& direction) const

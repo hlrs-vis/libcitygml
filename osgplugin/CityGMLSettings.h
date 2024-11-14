@@ -10,6 +10,7 @@ public:
         , _useMaxLODOnly(false)
         , _singleObject(false)
         , _storeGeomIDs(false)
+        , _separateBuildingParts(false)
         , _theme("")
     {}
 
@@ -29,6 +30,7 @@ public:
             else if ( currentOption == "pruneemptyobjects" ) _params.pruneEmptyObjects = true;
             else if ( currentOption == "usemaxlodonly") _useMaxLODOnly = true;
             else if ( currentOption == "singleobject") _singleObject = true;
+            else if ( currentOption == "separatebuildingparts") _separateBuildingParts = true;
             else if ( currentOption == "usetheme" ) iss >> _theme;
             else if ( currentOption == "storegeomids" ) _storeGeomIDs = true;
         }
@@ -40,6 +42,7 @@ public:
     bool _useMaxLODOnly;
     bool _singleObject;
     bool _storeGeomIDs;
+    bool _separateBuildingParts;
     std::map< std::string, osg::Texture2D* > _textureMap;
     std::string _theme;
 };
