@@ -6,6 +6,7 @@
 #include "CityGMLSettings.h"
 #include "CityGMLOSGPluginLogger.h"
 #include "osg/Geode"
+#include <osgUtil/Optimizer>
 
 class ReaderWriterCityGML : public osgDB::ReaderWriter
 {
@@ -80,6 +81,7 @@ private:
                                   const osg::Vec3d &offset, osg::MatrixTransform *root) const;
     void applyMaterialForSingleObject(MaterialArraysMap &matMap,
                                       osg::ref_ptr<osg::Geode> geode) const;
+    void optimizeNode(osg::Node *node) const;
 };
 
 // use forwarding reference to avoid code duplication and to preserve type
