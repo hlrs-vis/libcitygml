@@ -36,6 +36,7 @@
 #include <osgDB/FileNameUtils>
 
 #include <osgUtil/SmoothingVisitor>
+#include <osgUtil/Optimizer>
 
 #include <osg/Notify>
 
@@ -65,6 +66,7 @@ ReaderWriterCityGML::ReaderWriterCityGML()
     supportsOption( "minLOD", "Minimum LOD level to fetch" );
     supportsOption( "maxLOD", "Maximum LOD level to fetch" );
     supportsOption( "optimize", "Optimize the geometries & polygons of the CityGML model to reduce the number of instanced objects" );
+    supportsOption( "optimizeRoot", "Optimize created root node." );
     supportsOption( "pruneEmptyObjects", "Prune empty objects (ie. without -supported- geometry)" );
     supportsOption( "destSRS", "Transform geometry to given reference system" );
     supportsOption( "useMaxLODonly", "Use the highest available LOD for geometry of one object" );
@@ -72,6 +74,14 @@ ReaderWriterCityGML::ReaderWriterCityGML()
     supportsOption( "storegeomids", "Store the citygml id of geometry objects in the corresponding osg::Geometry object as a description string." );
 
     m_logger = std::make_shared<CityGMLOSGPluginLogger>();
+}
+
+void ReaderWriterCityGML::optimizeNode(osg::Node *node) const
+{
+    osg::notify(osg::NOTICE) << "Optimizing..." << std::endl;
+    osgUtil::Optimizer optimizer;
+    optimizer.optimize(node, osgUtil::Optimizer::ALL_OPTIMIZATIONS);
+    osg::notify(osg::NOTICE) << "Finished optimizing." << std::endl;
 }
 
 // Read CityGML file using libcitygml and generate the OSG scenegraph
@@ -132,6 +142,9 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readNode( const std::string
     std::cout.rdbuf( coutsb );
     std::cerr.rdbuf( cerrsb );
 
+    if (settings._optimizeRoot) {
+        optimizeNode(rr.getNode());
+    }
     return rr;
 }
 
@@ -154,6 +167,9 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readNode( std::istream& fin
     std::cout.rdbuf( coutsb );
     std::cerr.rdbuf( cerrsb );
 
+    if (settings._optimizeRoot) {
+        optimizeNode(rr.getNode());
+    }
     return rr;
 }
 
@@ -288,8 +304,8 @@ osgDB::ReaderWriter::ReadResult ReaderWriterCityGML::readCity(std::shared_ptr<co
         for (unsigned int i = 0; i < roots.size(); ++i) createCityObject(*roots[i], settings, root, offset);
     }
 
-    osg::notify(osg::NOTICE) << "Done." << std::endl;
     root->setMatrix(osg::Matrixd::translate(offset));
+    osg::notify(osg::NOTICE) << "Done creating creating scenegraph." << std::endl;
     return root;
 }
 

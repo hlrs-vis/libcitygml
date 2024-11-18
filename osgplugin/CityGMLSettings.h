@@ -9,6 +9,7 @@ public:
         : _printNames(false)
         , _useMaxLODOnly(false)
         , _singleObject(false)
+        , _optimizeRoot(false)
         , _storeGeomIDs(false)
         , _separateBuildingParts(false)
         , _theme("")
@@ -29,6 +30,7 @@ public:
             else if ( currentOption == "optimize" ) _params.optimize = true;
             else if ( currentOption == "pruneemptyobjects" ) _params.pruneEmptyObjects = true;
             else if ( currentOption == "usemaxlodonly") _useMaxLODOnly = true;
+            else if ( currentOption == "optimizeroot") _optimizeRoot = true;
             else if ( currentOption == "singleobject") _singleObject = true;
             else if ( currentOption == "separatebuildingparts") _separateBuildingParts = true;
             else if ( currentOption == "usetheme" ) iss >> _theme;
@@ -43,6 +45,7 @@ public:
     bool _singleObject;
     bool _storeGeomIDs;
     bool _separateBuildingParts;
+    bool _optimizeRoot;
     std::map< std::string, osg::Texture2D* > _textureMap;
     std::string _theme;
 };
