@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <memory>
 
@@ -25,7 +26,7 @@ namespace citygml {
     {
     public:
 
-        enum class CityObjectsType : uint64_t {
+        enum class CityObjectsType : std::uint64_t {
             COT_GenericCityObject           = 1ll,
             COT_Building                    = 1ll<< 1,
             COT_Room                        = 1ll<< 2,
